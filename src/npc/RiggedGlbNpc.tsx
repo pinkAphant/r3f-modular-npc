@@ -13,7 +13,6 @@ interface RiggedGlbNpcProps {
   url: string;
   activeAnim: string | null;
   wireframe: boolean;
-  pixelCrisp: boolean;
   showSockets: boolean;
   customAlbedoUrl: string | null;
   onLoaded: (info: RiggedNpcInfo) => void;
@@ -30,7 +29,6 @@ export function RiggedGlbNpc({
   url,
   activeAnim,
   wireframe,
-  pixelCrisp,
   showSockets,
   customAlbedoUrl,
   onLoaded,
@@ -48,25 +46,17 @@ export function RiggedGlbNpc({
     const tex = new THREE.TextureLoader().load(customAlbedoUrl);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.flipY = false;
-    tex.magFilter = pixelCrisp ? THREE.NearestFilter : THREE.LinearFilter;
-    tex.minFilter = pixelCrisp ? THREE.NearestFilter : THREE.LinearMipmapLinearFilter;
     return tex;
-  }, [customAlbedoUrl, pixelCrisp]);
+  }, [customAlbedoUrl]);
 
-  useEffect(() => {
-    return () => {
-      customTex?.dispose();
-    };
-  }, [customTex]);
+  useEffect(() => () => customTex?.dispose(), [customTex]);
 
   useEffect(() => {
     let cancelled = false;
-    const loader = new GLTFLoader();
-    loader.load(url, (gltf) => {
+    new GLTFLoader().load(url, (gltf) => {
       if (cancelled) return;
       const root = gltf.scene;
 
-      // Ground feet to Y=0
       const box = new THREE.Box3().setFromObject(root);
       if (Number.isFinite(box.min.y)) {
         root.position.y -= box.min.y;
@@ -85,15 +75,14 @@ export function RiggedGlbNpc({
           mesh.receiveShadow = true;
           const g = mesh.geometry;
           tris += g.index ? g.index.count / 3 : g.attributes.position.count / 3;
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          const rawMat = mesh.material;
+          const mats: THREE.Material[] = Array.isArray(rawMat) ? rawMat : [rawMat];
           mats.forEach((m) => {
-            const std = m as THREE.MeshStandardMaterial;
-            origMapsRef.current.set(m, std.map ?? null);
+            origMapsRef.current.set(m, (m as THREE.MeshStandardMaterial).map ?? null);
           });
         }
       });
 
-      // Attach visual socket markers to Mixamo bones
       for (const spec of SOCKET_BONES) {
         const bone = root.getObjectByName(spec.bone);
         if (bone) {
@@ -124,8 +113,11 @@ export function RiggedGlbNpc({
         containerRef.current.add(root);
       }
 
-      const animNames = gltf.animations.map((c) => c.name);
-      onLoaded({ tris: Math.round(tris), animations: animNames, boneCount });
+      onLoaded({
+        tris: Math.round(tris),
+        animations: gltf.animations.map((c) => c.name),
+        boneCount,
+      });
     });
 
     return () => {
@@ -138,7 +130,6 @@ export function RiggedGlbNpc({
     };
   }, [url, onLoaded]);
 
-  // Switch active animation with smooth crossfade
   useEffect(() => {
     const actions = actionsRef.current;
     const names = Object.keys(actions);
@@ -153,7 +144,6 @@ export function RiggedGlbNpc({
     }
   }, [activeAnim, url]);
 
-  // Apply wireframe, pixel-crisp filtering, custom albedo, and socket visibility
   useEffect(() => {
     const root = sceneRef.current;
     if (!root) return;
@@ -164,13 +154,7 @@ export function RiggedGlbNpc({
         mats.forEach((m) => {
           const std = m as THREE.MeshStandardMaterial;
           std.wireframe = wireframe;
-          const baseMap = origMapsRef.current.get(m) ?? null;
-          std.map = customTex ?? baseMap;
-          if (std.map) {
-            std.map.magFilter = pixelCrisp ? THREE.NearestFilter : THREE.LinearFilter;
-            std.map.minFilter = pixelCrisp ? THREE.NearestFilter : THREE.LinearMipmapLinearFilter;
-            std.map.needsUpdate = true;
-          }
+          std.map = customTex ?? origMapsRef.current.get(m) ?? null;
           std.needsUpdate = true;
         });
       }
@@ -178,7 +162,7 @@ export function RiggedGlbNpc({
     for (const m of socketMarkersRef.current) {
       m.visible = showSockets;
     }
-  }, [wireframe, pixelCrisp, customTex, showSockets]);
+  }, [wireframe, customTex, showSockets]);
 
   useFrame((_, delta) => {
     mixerRef.current?.update(Math.min(delta, 0.05));

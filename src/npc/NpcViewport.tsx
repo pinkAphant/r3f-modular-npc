@@ -1,104 +1,34 @@
 import { Grid, OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
-import { useEffect, useMemo } from 'react';
-import * as THREE from 'three';
-import { createPsxTexture, renderAlbedoCanvas, type OutfitId } from './albedoAtlas';
-import { buildPsxNpc, type NpcBuild, type SocketSpec } from './buildPsxNpc';
 import { RiggedGlbNpc, type RiggedNpcInfo } from './RiggedGlbNpc';
 
-export type ViewSource = 'tripo-m' | 'tripo-f' | 'procedural' | 'custom-glb';
+export type CharacterId = 'male' | 'female' | 'custom';
 
 interface NpcViewportProps {
-  source: ViewSource;
+  character: CharacterId;
   customGlbUrl: string | null;
   activeAnim: string | null;
-  build: NpcBuild;
-  outfit: OutfitId;
   wireframe: boolean;
-  pixelCrisp: boolean;
   showSockets: boolean;
-  showUvGuides: boolean;
   customAlbedoUrl: string | null;
-  onProceduralStats: (tris: number, sockets: SocketSpec[]) => void;
-  onRiggedLoaded: (info: RiggedNpcInfo) => void;
-  onExportReady: (meshRef: THREE.Group | null) => void;
+  onLoaded: (info: RiggedNpcInfo) => void;
 }
 
-function ProceduralNpc({
-  build,
-  outfit,
+export function NpcViewport({
+  character,
+  customGlbUrl,
+  activeAnim,
   wireframe,
   showSockets,
-  showUvGuides,
   customAlbedoUrl,
-  onProceduralStats,
-  onExportReady,
-}: Pick<
-  NpcViewportProps,
-  | 'build'
-  | 'outfit'
-  | 'wireframe'
-  | 'showSockets'
-  | 'showUvGuides'
-  | 'customAlbedoUrl'
-  | 'onProceduralStats'
-  | 'onExportReady'
->) {
-  const npc = useMemo(() => buildPsxNpc(build), [build]);
-
-  const texture = useMemo(() => {
-    if (customAlbedoUrl) {
-      const tex = new THREE.TextureLoader().load(customAlbedoUrl);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.magFilter = THREE.NearestFilter;
-      tex.minFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      return tex;
-    }
-    return createPsxTexture(renderAlbedoCanvas(outfit, build, showUvGuides));
-  }, [outfit, build, showUvGuides, customAlbedoUrl]);
-
-  useEffect(() => {
-    onProceduralStats(npc.triCount, npc.sockets);
-    return () => npc.geometry.dispose();
-  }, [npc, onProceduralStats]);
-
-  useEffect(() => () => texture.dispose(), [texture]);
-
-  return (
-    <group name={`NPC_PSX_${build.toUpperCase()}`} ref={(g) => onExportReady(g)}>
-      <mesh name="Body_Mesh" geometry={npc.geometry} castShadow receiveShadow>
-        <meshStandardMaterial
-          map={texture}
-          roughness={0.95}
-          metalness={0.0}
-          flatShading
-          wireframe={wireframe}
-        />
-      </mesh>
-      {npc.sockets.map((s) => (
-        <group key={s.name} name={s.name} position={s.position}>
-          {showSockets && (
-            <mesh>
-              <octahedronGeometry args={[0.032, 0]} />
-              <meshBasicMaterial color={s.color} wireframe />
-            </mesh>
-          )}
-        </group>
-      ))}
-    </group>
-  );
-}
-
-export function NpcViewport(props: NpcViewportProps) {
-  const glbUrl =
-    props.source === 'tripo-m'
+  onLoaded,
+}: NpcViewportProps) {
+  const url =
+    character === 'male'
       ? '/assets/npc_psx_m.glb'
-      : props.source === 'tripo-f'
+      : character === 'female'
       ? '/assets/npc_psx_f.glb'
-      : props.source === 'custom-glb'
-      ? props.customGlbUrl
-      : null;
+      : customGlbUrl ?? '/assets/npc_psx_m.glb';
 
   return (
     <Canvas camera={{ position: [0, 1.3, 2.9], fov: 40 }} shadows className="h-full w-full">
@@ -118,28 +48,14 @@ export function NpcViewport(props: NpcViewportProps) {
         fadeDistance={10}
       />
 
-      {glbUrl ? (
-        <RiggedGlbNpc
-          url={glbUrl}
-          activeAnim={props.activeAnim}
-          wireframe={props.wireframe}
-          pixelCrisp={props.pixelCrisp}
-          showSockets={props.showSockets}
-          customAlbedoUrl={props.customAlbedoUrl}
-          onLoaded={props.onRiggedLoaded}
-        />
-      ) : (
-        <ProceduralNpc
-          build={props.build}
-          outfit={props.outfit}
-          wireframe={props.wireframe}
-          showSockets={props.showSockets}
-          showUvGuides={props.showUvGuides}
-          customAlbedoUrl={props.customAlbedoUrl}
-          onProceduralStats={props.onProceduralStats}
-          onExportReady={props.onExportReady}
-        />
-      )}
+      <RiggedGlbNpc
+        url={url}
+        activeAnim={activeAnim}
+        wireframe={wireframe}
+        showSockets={showSockets}
+        customAlbedoUrl={customAlbedoUrl}
+        onLoaded={onLoaded}
+      />
 
       <OrbitControls target={[0, 0.95, 0]} makeDefault />
     </Canvas>
