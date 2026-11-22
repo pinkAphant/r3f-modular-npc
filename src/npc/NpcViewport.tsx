@@ -1,10 +1,23 @@
 import { Grid, OrbitControls } from '@react-three/drei';
-import { Canvas } from '@react-three/fiber';
-import { RiggedGlbNpc, type RiggedNpcInfo } from './RiggedGlbNpc';
+import { Canvas, useThree } from '@react-three/fiber';
+import { useCallback, useLayoutEffect } from 'react';
+import * as THREE from 'three';
+import type { FingerPoseTag, WeaponArchetypeId } from '../types/posing';
+import {
+  RiggedGlbNpc,
+  type RiggedNpcInfo,
+  type RiggedNpcTelemetry,
+} from './RiggedGlbNpc';
+import { setHudPoseTag } from '../hud/hudSignals';
+import { setTelemetryRigFrame } from '../range/rangeTelemetry';
+import {
+  updateViewerTelemetry,
+  useViewerState,
+} from './viewerState';
 
-export type CharacterId = 'male' | 'female' | 'custom';
+export type CharacterId = 'hero' | 'male' | 'female' | 'custom';
 
-interface NpcViewportProps {
+export interface NpcViewportProps {
   character: CharacterId;
   customGlbUrl: string | null;
   activeAnim: string | null;
@@ -12,9 +25,22 @@ interface NpcViewportProps {
   showSockets: boolean;
   customAlbedoUrl: string | null;
   onLoaded: (info: RiggedNpcInfo) => void;
+  poseTag?: FingerPoseTag;
+  poseWeight?: number;
+  wiggleEnabled?: boolean;
+  wiggleIntensity?: number;
+  weaponArchetype?: 'none' | WeaponArchetypeId;
 }
 
-export function NpcViewport({
+export type NpcViewerContentProps = NpcViewportProps;
+
+const CHARACTER_URLS: Record<Exclude<CharacterId, 'custom'>, string> = {
+  hero: '/assets/npc_hero_uploaded.glb',
+  male: '/assets/npc_psx_m.glb',
+  female: '/assets/npc_psx_f.glb',
+};
+
+export function NpcViewerContent({
   character,
   customGlbUrl,
   activeAnim,
@@ -22,19 +48,61 @@ export function NpcViewport({
   showSockets,
   customAlbedoUrl,
   onLoaded,
-}: NpcViewportProps) {
+  poseTag,
+  poseWeight,
+  wiggleEnabled,
+  wiggleIntensity,
+  weaponArchetype,
+}: NpcViewerContentProps) {
+  const viewer = useViewerState();
+  const { camera } = useThree();
+
+  useLayoutEffect(() => {
+    const persp = camera as THREE.PerspectiveCamera;
+    if (persp.isPerspectiveCamera) {
+      persp.fov = 40;
+      persp.near = 0.1;
+      persp.far = 1000;
+      persp.updateProjectionMatrix();
+    }
+    camera.position.set(0, 1.3, 2.9);
+    camera.lookAt(0, 0.95, 0);
+    camera.updateMatrixWorld();
+  }, [camera]);
+
   const url =
-    character === 'male'
-      ? '/assets/npc_psx_m.glb'
-      : character === 'female'
-      ? '/assets/npc_psx_f.glb'
-      : customGlbUrl ?? '/assets/npc_psx_m.glb';
+    character === 'custom' && customGlbUrl
+      ? customGlbUrl
+      : character === 'hero'
+      ? CHARACTER_URLS.hero
+      : CHARACTER_URLS[character === 'female' ? 'female' : 'male'];
+
+  const handleLoaded = useCallback(
+    (info: RiggedNpcInfo) => {
+      updateViewerTelemetry({ boneCount: info.boneCount });
+      onLoaded(info);
+    },
+    [onLoaded]
+  );
+
+  const handleTelemetry = useCallback((t: RiggedNpcTelemetry) => {
+    setHudPoseTag(t.poseTag);
+    updateViewerTelemetry(t);
+    setTelemetryRigFrame(t.ikAnchorsFound, t.fingerEulerRad, t.wiggle, t.poseTag);
+  }, []);
 
   return (
-    <Canvas camera={{ position: [0, 1.3, 2.9], fov: 40 }} shadows className="h-full w-full">
+    <>
       <color attach="background" args={['#09090b']} />
       <ambientLight intensity={0.85} />
-      <directionalLight position={[2.5, 4.5, 3]} intensity={1.4} castShadow />
+      <directionalLight
+        position={[2.5, 4.5, 3]}
+        intensity={1.4}
+        castShadow
+        shadow-mapSize={[1024, 1024]}
+        shadow-bias={-0.002}
+        shadow-normalBias={0.03}
+      />
       <directionalLight position={[-2.5, 2.0, -2]} intensity={0.5} />
 
       <Grid
@@ -54,10 +122,28 @@ export function NpcViewport({
         wireframe={wireframe}
         showSockets={showSockets}
         customAlbedoUrl={customAlbedoUrl}
-        onLoaded={onLoaded}
+        onLoaded={handleLoaded}
+        poseTag={poseTag ?? viewer.poseTag}
+        poseWeight={poseWeight ?? viewer.poseWeight}
+        wiggleEnabled={wiggleEnabled ?? viewer.wiggleEnabled}
+        wiggleIntensity={wiggleIntensity ?? viewer.wiggleIntensity}
+        weaponArchetype={weaponArchetype ?? viewer.weaponArchetype}
+        onTelemetryUpdate={handleTelemetry}
       />
 
       <OrbitControls target={[0, 0.95, 0]} makeDefault />
+    </>
+  );
+}
+
+export function NpcViewport(props: NpcViewportProps) {
+  return (
+    <Canvas
+      camera={{ position: [0, 1.3, 2.9], fov: 40 }}
+      shadows
+      className="h-full w-full"
+    >
+      <NpcViewerContent {...props} />
     </Canvas>
   );
 }

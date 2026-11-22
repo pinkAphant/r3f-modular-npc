@@ -4,4 +4,21 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/three/')) return 'three';
+          if (id.includes('/node_modules/@dimforge/rapier3d-compat/')) return 'rapier';
+          if (
+            id.includes('/node_modules/@react-three/uikit') ||
+            id.includes('/node_modules/@pmndrs/uikit')
+          ) {
+            return 'uikit';
+          }
+          return undefined;
+        },
+      },
+    },
+  },
 });
